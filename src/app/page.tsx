@@ -1,102 +1,210 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+// import useSWR from 'swr';
+import { FundingTicker } from '../types';
+import { SUPPORTED_ASSETS, SUPPORTED_EXCHANGES } from '../lib/symbols';
+import FundingControls from './components/FundingControls';
+import FundingTable from './components/FundingTable';
+import FundingSignalsBar from './components/FundingSignalsBar';
+import ValueContext from './components/ValueContext';
+import ParallaxBackground from './components/ParallaxBackground';
+import { jp } from './i18n/jpKatakana';
+
+
+// Fetcher function for SWR
+const fetcher = async (url: string): Promise<{ data: FundingTicker[]; meta?: { stale?: boolean } }> => {
+  console.log('Fetching:', url);
+  const response = await fetch(url);
+  if (!response.ok) {
+    console.error('Fetch failed:', response.status, response.statusText);
+    throw new Error('Failed to fetch funding data');
+  }
+  const data = await response.json();
+  console.log('Fetched data:', data);
+  return data;
+};
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [selectedAssets, setSelectedAssets] = useState<string[]>(SUPPORTED_ASSETS);
+  const [selectedExchanges, setSelectedExchanges] = useState<string[]>(SUPPORTED_EXCHANGES);
+  const [sortBy, setSortBy] = useState<'apr' | 'absApr' | 'negativesFirst'>('absApr');
+  const [quickFilters, setQuickFilters] = useState({
+    negativesOnly: false,
+    nextUnder1h: false,
+    pinned: false,
+  });
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Build API URL with current filters
+  const apiUrl = `/api/funding?assets=${selectedAssets.join(',')}&exchanges=${selectedExchanges.join(',')}`;
+
+  // Fetch funding data with useEffect
+  const [data, setData] = useState<{ data: FundingTicker[]; meta?: { stale?: boolean } } | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  // Track if component is mounted on client side
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // Only run on client side after mounting
+    if (typeof window === 'undefined' || !mounted) return;
+    
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch funding data: ${response.status} ${response.statusText}`);
+        }
+        const result = await response.json();
+        setData(result);
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setError(err as Error);
+        // Set fallback data on error
+        setData({
+          data: [],
+          meta: { stale: true }
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+    
+    // Set up interval for refreshing data
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [apiUrl, mounted]);
+
+
+  // Filter and sort data based on current options
+  const filteredAndSortedData = data?.data ? [...data.data]
+    .filter((ticker) => {
+      // Apply quick filters
+      if (quickFilters.negativesOnly && (ticker.aprSigned || 0) >= 0) return false;
+      
+      if (quickFilters.nextUnder1h) {
+        if (!ticker.nextFundingTime) return false;
+        const now = new Date().getTime();
+        const nextFunding = new Date(ticker.nextFundingTime).getTime();
+        const timeUntil = nextFunding - now;
+        if (timeUntil <= 0 || timeUntil >= 60 * 60 * 1000) return false; // Not within 1 hour
+      }
+      
+      if (quickFilters.pinned) {
+        // For now, we don't have a pinned field, so this filter does nothing
+        // In a real implementation, you'd check ticker.pinned
+      }
+      
+      return true;
+    })
+    .sort((a, b) => {
+      const aprA = a.aprSigned || 0;
+      const aprB = b.aprSigned || 0;
+
+      switch (sortBy) {
+        case 'apr':
+          return aprB - aprA;
+        case 'absApr':
+          return Math.abs(aprB) - Math.abs(aprA);
+        case 'negativesFirst':
+          if (aprA < 0 && aprB >= 0) return -1;
+          if (aprA >= 0 && aprB < 0) return 1;
+          return Math.abs(aprB) - Math.abs(aprA);
+        default:
+          return 0;
+      }
+    }) : [];
+
+  const handleAssetToggle = (asset: string) => {
+    setSelectedAssets(prev =>
+      prev.includes(asset)
+        ? prev.filter(a => a !== asset)
+        : [...prev, asset]
+    );
+  };
+
+  const handleExchangeToggle = (exchange: string) => {
+    setSelectedExchanges(prev =>
+      prev.includes(exchange)
+        ? prev.filter(e => e !== exchange)
+        : [...prev, exchange]
+    );
+  };
+
+  return (
+    <div className="min-h-screen">
+      <ParallaxBackground />
+      {/* Header with Fuji silhouette */}
+      <header className="header-fuji pt-8 pb-6">
+        <div className="max-w-6xl mx-auto px-4">
+           <div className="flex items-center justify-end">
+             <div>
+               <img 
+                 src="/FujiScan-logo-wide.png" 
+                 alt="FujiScan Logo" 
+                 className="w-52 h-29 rounded-xl"
+               />
+             </div>
+           </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 space-y-6 py-8 bg-transparent">
+        {/* Funding Radar Section */}
+        <div className="glass p-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold text-ink">
+              Funding Rates <span className="text-xs text-kori">({jp.fundingRadarSub})</span>
+            </h2>
+          </div>
+          <FundingSignalsBar tickers={filteredAndSortedData} />
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-1">
+              <FundingControls
+                selectedAssets={selectedAssets}
+                selectedExchanges={selectedExchanges}
+                sortBy={sortBy}
+                onAssetToggle={handleAssetToggle}
+                onExchangeToggle={handleExchangeToggle}
+                onSortChange={setSortBy}
+                onQuickFiltersChange={setQuickFilters}
+              />
+            </div>
+            <div className="lg:col-span-3">
+              <FundingTable data={filteredAndSortedData} isLoading={isLoading} />
+            </div>
+          </div>
+        </div>
+
+        {/* Pixel Divider */}
+        <div className="hr-pixel"></div>
+
+        {/* Value Context Section */}
+        <div className="glass p-6">
+          <ValueContext />
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+
+      {/* Footer */}
+      <footer className="border-t border-border mt-16 glass-footer">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="text-center text-sm text-muted">
+            <p>Funding data updates every 30 seconds. Values are estimates.</p>
+            {data?.meta?.stale || false && (
+              <p className="mt-1 text-akane">
+                Some data may be stale due to exchange API issues.
+              </p>
+            )}
+          </div>
+        </div>
       </footer>
     </div>
   );

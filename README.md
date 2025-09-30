@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Funding Rate Radar
+
+A real-time cryptocurrency funding rate monitoring application with value context comparisons.
+
+## Features
+
+### 📊 Funding Rate Monitoring
+- **Real-time data** from 7 major exchanges (Binance, Bybit, OKX, Hyperliquid, Lighter, Extended, Aster)
+- **Interactive table** with sorting by APR, absolute APR, and negatives first
+- **Quick filters** for negative rates and upcoming funding periods
+- **Asset & exchange filtering** with persistent state
+- **Sparkline charts** showing 24h funding rate history
+- **Expandable rows** with detailed funding information
+
+### 💰 Value Context
+- **Cost comparisons** - see how much your PnL covers in real-world terms
+- **Interactive calculator** with live one-line summary
+- **Smart precision** - different decimal places based on magnitude
+- **Color-coded results** - amber for gains, akane for losses, kori for neutral
+- **Pin functionality** - keep important items like rent/groceries at the top
+- **Sorting modes** - by amount, priority (essentials first), or edited items
+- **Filter by frequency** - one-off, monthly, or annual expenses
+
+### 🎨 Enhanced UX
+- **Bilingual interface** - English labels with Japanese katakana sublabels
+- **Glass morphism design** with pixelated Fuji mountain background
+- **Sticky mini-calculator** when scrolling out of view
+- **Keyboard navigation** - arrow keys for amount adjustment
+- **Debounced calculations** for smooth performance
+- **Tooltips and microcopy** for better usability
+- **Responsive design** that works on all screen sizes
+
+### ⚙️ Cost Editor
+- **Inline editing** - click any field to edit in place
+- **Region presets** - EU, US, and JP cost templates
+- **Import/Export** - JSON data exchange
+- **Last edited timestamp** for tracking changes
+- **Persistent storage** - all settings saved locally
+
+## Tech Stack
+
+- **Next.js 14** with App Router
+- **TypeScript** for type safety
+- **Tailwind CSS** for styling
+- **Custom CSS** for glass morphism effects
+- **Real-time API** integration with multiple exchanges
 
 ## Getting Started
 
-First, run the development server:
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/funding-rate-radar.git
+   cd funding-rate-radar
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. **Run the development server**
+   ```bash
+   npm run dev
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+4. **Open your browser**
+   Navigate to [http://localhost:3000](http://localhost:3000)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API Endpoints
 
-## Learn More
+- `GET /api/funding` - Fetches real-time funding rate data from all exchanges
 
-To learn more about Next.js, take a look at the following resources:
+## Configuration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The application supports multiple exchanges and assets. Configuration can be found in:
+- `src/lib/symbols.ts` - Supported assets and exchanges
+- `src/lib/exchanges/` - Exchange-specific API implementations
+- `src/app/data/costs.ts` - Default cost items for value context
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Design Philosophy
 
-## Deploy on Vercel
+This application combines the precision of financial data with the aesthetic of Japanese tech culture. The bilingual interface (English/Japanese) provides accessibility while maintaining cultural authenticity through carefully chosen katakana terminology.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Contributing
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Inspired by the precision and aesthetics of Japanese financial technology
+- Built with modern web technologies for optimal performance
+- Designed for both casual users and professional traders

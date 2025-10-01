@@ -1,9 +1,70 @@
 import { CostItem, ValueComparison } from '../types';
 
 // APR calculation utilities
-export function calculateAPR(fundingRate: number, fundingPeriodHours: number): number {
-  const periodsPerYear = (24 * 365) / fundingPeriodHours;
-  return fundingRate * periodsPerYear;
+type AnnualizeMode = 'simple' | 'compound';
+
+/**
+ * Convert a funding rate quoted for a given period into an hourly rate.
+ * @param periodRate  funding for the whole period (e.g., +0.0001 = +1 bp for that period)
+ * @param periodHours length of the funding period in hours (1, 4, 8, ...)
+ * @param mode        'simple' divides by periodHours; 'compound' uses the n-th root
+ */
+export function toHourlyRate(
+  periodRate: number,
+  periodHours: number,
+  mode: AnnualizeMode = 'simple'
+): number {
+  if (periodHours <= 0) return 0;
+  return mode === 'compound'
+    ? Math.pow(1 + periodRate, 1 / periodHours) - 1
+    : periodRate / periodHours;
+}
+
+/**
+ * Annualize from a per-hour rate.
+ * @param hourlyRate  funding per hour (decimal, e.g., 0.0001 = +1 bp/hour)
+ * @param mode        'simple' multiplies; 'compound' compounds hourly for a year
+ */
+export function annualizeFromHourly(
+  hourlyRate: number,
+  mode: AnnualizeMode = 'simple'
+): number {
+  const hoursPerYear = 24 * 365;
+  return mode === 'compound'
+    ? Math.pow(1 + hourlyRate, hoursPerYear) - 1
+    : hourlyRate * hoursPerYear;
+}
+
+/**
+ * Convenience: annualize a funding rate that is quoted per arbitrary period.
+ * Works for 1h, 4h, 8h, etc.
+ */
+export function calculateAPR(
+  periodRate: number,
+  fundingPeriodHours: number,
+  mode: AnnualizeMode = 'simple'
+): number {
+  const hourly = toHourlyRate(periodRate, fundingPeriodHours, mode);
+  return annualizeFromHourly(hourly, mode);
+}
+
+/**
+ * Infers the dominant period (in hours) from consecutive timestamps.
+ */
+export function inferPeriodHoursFromHistory(timestampsMs: number[]): number {
+  if (!timestampsMs || timestampsMs.length < 2) return 1;
+  const gaps = [];
+  for (let i = 1; i < timestampsMs.length; i++) {
+    gaps.push((timestampsMs[i] - timestampsMs[i - 1]) / 3_600_000);
+  }
+  // median gap to avoid outliers
+  gaps.sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  // clamp to common periods
+  const candidates = [1, 2, 4, 8, 12];
+  return candidates.reduce((best, c) =>
+    Math.abs(c - median) < Math.abs(best - median) ? c : best
+  , candidates[0]);
 }
 
 export function formatAPR(apr: number): string {
@@ -57,9 +118,9 @@ export function computeComparisons(
   // Apply filters
   if (filters.length > 0) {
     filtered = filtered.filter(item => {
-      if (filters.includes('oneOff') && item.category === 'tech') return true;
+      if (filters.includes('oneOff') && ['tech', 'travel'].includes(item.category || '')) return true;
       if (filters.includes('monthly') && ['housing', 'food', 'utilities'].includes(item.category || '')) return true;
-      if (filters.includes('annual') && item.category === 'leisure') return true;
+      if (filters.includes('annual') && ['leisure', 'housing'].includes(item.category || '')) return true;
       return false;
     });
   }
@@ -73,10 +134,10 @@ export function computeComparisons(
   // Sort based on mode
   switch (sortMode) {
     case 'priority':
-      // Essentials first (housing, food, utilities)
+      // Essentials first (housing, food, utilities, essential travel)
       return comparisons.sort((a, b) => {
-        const aPriority = ['housing', 'food', 'utilities'].includes(a.item.category || '') ? 0 : 1;
-        const bPriority = ['housing', 'food', 'utilities'].includes(b.item.category || '') ? 0 : 1;
+        const aPriority = ['housing', 'food', 'utilities', 'travel'].includes(a.item.category || '') ? 0 : 1;
+        const bPriority = ['housing', 'food', 'utilities', 'travel'].includes(b.item.category || '') ? 0 : 1;
         if (aPriority !== bPriority) return aPriority - bPriority;
         return Math.abs(b.multiple) - Math.abs(a.multiple);
       });

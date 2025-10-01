@@ -19,7 +19,7 @@ export default function ParallaxBackground() {
       className="fixed inset-0 pointer-events-none -z-10 pixelated"
       style={{
         background: `
-          linear-gradient(rgba(11, 18, 32, 0.3), rgba(11, 18, 32, 0.5)),
+          linear-gradient(rgba(11, 18, 32, 0.15), rgba(11, 18, 32, 0.25)),
           url('/FujiScan-bg-2.png')
         `,
         backgroundSize: 'cover',

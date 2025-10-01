@@ -84,7 +84,7 @@ export default function FundingTable({ data, isLoading }: FundingTableProps) {
                 Exchange
                 <span className="sublabel">({jp.exchangesSub})</span>
               </th>
-              <th className="text-right" style={{ width: '9em' }}>
+              <th className="text-right" style={{ width: '9em' }} title="Annualized funding rate (simple)">
                 Funding APR
                 <span className="sublabel">({jp.fundingAprSub})</span>
               </th>
@@ -134,7 +134,7 @@ export default function FundingTable({ data, isLoading }: FundingTableProps) {
                       <span 
                         className={`font-semibold ${aprClass(ticker.aprSigned)}`}
                         style={{ fontVariantNumeric: 'tabular-nums' }}
-                        title="Annualized from per-period funding × periods/year"
+                        title={`Raw: ${((ticker.lastFundingRate || 0) * 100).toFixed(4)}% per ${ticker.fundingPeriodHours || 8}h period`}
                       >
                         {ticker.aprSigned ? formatAPR(ticker.aprSigned) : '—'}
                       </span>

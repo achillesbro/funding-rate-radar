@@ -12,11 +12,6 @@ export const SYMBOL_MAP: Record<string, { base: string; quote: string }> = {
   'SOLUSDT_BYBIT': { base: 'SOL', quote: 'USDT' },
   'HYPEUSDT_BYBIT': { base: 'HYPE', quote: 'USDT' },
   
-  // OKX
-  'BTC-USDT': { base: 'BTC', quote: 'USDT' },
-  'ETH-USDT': { base: 'ETH', quote: 'USDT' },
-  'SOL-USDT': { base: 'SOL', quote: 'USDT' },
-  'HYPE-USDT': { base: 'HYPE', quote: 'USDT' },
   
   // Hyperliquid
   'BTC_HYPER': { base: 'BTC', quote: 'USDT' },
@@ -44,7 +39,7 @@ export const SYMBOL_MAP: Record<string, { base: string; quote: string }> = {
 };
 
 export const SUPPORTED_ASSETS = ['BTC', 'ETH', 'SOL', 'HYPE'];
-export const SUPPORTED_EXCHANGES = ['binance', 'bybit', 'okx', 'hyperliquid', 'lighter', 'extended', 'aster'];
+export const SUPPORTED_EXCHANGES = ['binance', 'bybit', 'hyperliquid', 'lighter', 'extended', 'aster'];
 
 export function normalizeSymbol(symbol: string, exchange: string): { base: string; quote: string } | null {
   const normalized = symbol.toUpperCase();
@@ -55,7 +50,7 @@ export function normalizeSymbol(symbol: string, exchange: string): { base: strin
   }
   
   // Fallback parsing for common patterns
-  if ((exchange === 'okx' || exchange === 'extended') && normalized.includes('-')) {
+  if (exchange === 'extended' && normalized.includes('-')) {
     const [base, quote] = normalized.split('-');
     return { base, quote };
   }
@@ -80,8 +75,6 @@ export function getSymbolForExchange(base: string, exchange: string): string {
     case 'bybit':
     case 'aster':
       return `${base}USDT`;
-    case 'okx':
-      return `${base}-USDT`;
     case 'hyperliquid':
     case 'lighter':
       return base;

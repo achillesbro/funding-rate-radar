@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 // import useSWR from 'swr';
 import { FundingTicker } from '../types';
 import { SUPPORTED_ASSETS, SUPPORTED_EXCHANGES } from '../lib/symbols';
@@ -14,14 +14,11 @@ import { jp } from './i18n/jpKatakana';
 
 // Fetcher function for SWR
 const fetcher = async (url: string): Promise<{ data: FundingTicker[]; meta?: { stale?: boolean } }> => {
-  console.log('Fetching:', url);
   const response = await fetch(url);
   if (!response.ok) {
-    console.error('Fetch failed:', response.status, response.statusText);
     throw new Error('Failed to fetch funding data');
   }
   const data = await response.json();
-  console.log('Fetched data:', data);
   return data;
 };
 
@@ -53,9 +50,12 @@ export default function Home() {
     // Only run on client side after mounting
     if (typeof window === 'undefined' || !mounted) return;
     
-    const fetchData = async () => {
+    const fetchData = async (isInitialLoad = false) => {
       try {
-        setIsLoading(true);
+        // Only show loading on initial load to prevent flickering
+        if (isInitialLoad) {
+          setIsLoading(true);
+        }
         setError(null);
         const response = await fetch(apiUrl);
         if (!response.ok) {
@@ -72,20 +72,25 @@ export default function Home() {
           meta: { stale: true }
         });
       } finally {
-        setIsLoading(false);
+        if (isInitialLoad) {
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchData();
+    fetchData(true); // Initial load with loading state
     
-    // Set up interval for refreshing data
-    const interval = setInterval(fetchData, 30000);
+    // Set up interval for refreshing data - update every 60 seconds (1 minute)
+    const interval = setInterval(() => fetchData(false), 60000);
     return () => clearInterval(interval);
   }, [apiUrl, mounted]);
 
 
-  // Filter and sort data based on current options
-  const filteredAndSortedData = data?.data ? [...data.data]
+  // Filter and sort data based on current options - memoized to prevent unnecessary re-calculations
+  const filteredAndSortedData = useMemo(() => {
+    if (!data?.data) return [];
+    
+    return [...data.data]
     .filter((ticker) => {
       // Apply quick filters
       if (quickFilters.negativesOnly && (ticker.aprSigned || 0) >= 0) return false;
@@ -121,7 +126,8 @@ export default function Home() {
         default:
           return 0;
       }
-    }) : [];
+    });
+  }, [data?.data, quickFilters, sortBy]);
 
   const handleAssetToggle = (asset: string) => {
     setSelectedAssets(prev =>
@@ -146,18 +152,29 @@ export default function Home() {
       <header className="header-fuji pt-8 pb-6">
         <div className="max-w-6xl mx-auto px-4">
            <div className="flex items-center justify-end">
-             <div>
+             <div className="text-center">
                <img 
                  src="/FujiScan-logo-wide.png" 
                  alt="FujiScan Logo" 
                  className="w-52 h-29 rounded-xl"
                />
+               <div className="text-sm text-ink mt-2">
+                 Made by <a href="https://x.com/0xachilles" target="_blank" rel="noopener noreferrer" className="text-aizome hover:text-amber transition-colors duration-200">@0xachilles</a>
+               </div>
              </div>
            </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 space-y-6 py-8 bg-transparent">
+        {/* Value Context Section */}
+        <div className="glass p-6">
+          <ValueContext />
+        </div>
+
+        {/* Pixel Divider */}
+        <div className="hr-pixel"></div>
+
         {/* Funding Radar Section */}
         <div className="glass p-6">
           <div className="mb-4">
@@ -182,14 +199,6 @@ export default function Home() {
               <FundingTable data={filteredAndSortedData} isLoading={isLoading} />
             </div>
           </div>
-        </div>
-
-        {/* Pixel Divider */}
-        <div className="hr-pixel"></div>
-
-        {/* Value Context Section */}
-        <div className="glass p-6">
-          <ValueContext />
         </div>
       </main>
 

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchBinanceFunding } from '../../../lib/exchanges/binance';
 import { fetchBybitFunding } from '../../../lib/exchanges/bybit';
-import { fetchOKXFunding } from '../../../lib/exchanges/okx';
 import { fetchHyperliquidFunding } from '../../../lib/exchanges/hyperliquid';
 import { fetchLighterFunding } from '../../../lib/exchanges/lighter';
 import { fetchExtendedFunding } from '../../../lib/exchanges/extended';
@@ -35,8 +34,6 @@ export async function GET(request: NextRequest) {
             return await fetchBinanceFunding(validAssets);
           case 'bybit':
             return await fetchBybitFunding(validAssets);
-          case 'okx':
-            return await fetchOKXFunding(validAssets);
           case 'hyperliquid':
             return await fetchHyperliquidFunding(validAssets);
           case 'lighter':
@@ -84,8 +81,8 @@ export async function GET(request: NextRequest) {
       }
     });
     
-    // Set cache headers
-    response.headers.set('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
+    // Set cache headers - cache for 60 seconds
+    response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
     
     return response;
   } catch (error) {
@@ -96,7 +93,7 @@ export async function GET(request: NextRequest) {
       { 
         status: 500,
         headers: {
-          'Cache-Control': 's-maxage=30, stale-while-revalidate=60'
+          'Cache-Control': 's-maxage=60, stale-while-revalidate=120'
         }
       }
     );

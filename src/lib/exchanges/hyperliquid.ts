@@ -1,6 +1,6 @@
 import { FundingTicker } from '../../types';
 import { normalizeSymbol, getSymbolForExchange } from '../symbols';
-import { calculateAPR } from '../math';
+import { calculateAPR, inferPeriodHoursFromHistory } from '../math';
 
 export async function fetchHyperliquidFunding(symbols: string[]): Promise<FundingTicker[]> {
   try {
@@ -39,11 +39,13 @@ export async function fetchHyperliquidFunding(symbols: string[]): Promise<Fundin
         const latest = fundingHistory[fundingHistory.length - 1];
         const currentRate = parseFloat(latest.fundingRate);
         
-        // Hyperliquid uses 8h funding period
-        const fundingPeriodHours = 8;
+        // Hyperliquid returns hourly funding rates in their API response
+        // The funding rate shown is already the hourly rate, not the 8h period rate
+        const fundingPeriodHours = 1; // Hyperliquid API returns hourly rates
+        
         const aprSigned = calculateAPR(currentRate, fundingPeriodHours);
         
-        // Calculate next funding time (8h from last)
+        // Calculate next funding time (1h from last)
         const lastFundingTime = latest.time;
         const nextFundingTime = new Date(lastFundingTime + (fundingPeriodHours * 60 * 60 * 1000));
         

@@ -1,6 +1,6 @@
 export type FundingTicker = {
   id: string;
-  exchange: 'binance' | 'bybit' | 'okx' | 'hyperliquid' | 'lighter' | 'extended' | 'aster';
+  exchange: 'binance' | 'bybit' | 'hyperliquid' | 'lighter' | 'extended' | 'aster';
   base: string;
   quote: string;
   symbolRaw: string;

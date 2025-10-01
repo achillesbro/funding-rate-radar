@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { CostItem, ValueComparison } from '../../types';
 import { DEFAULT_COSTS, loadCostsFromStorage, saveCostsToStorage } from '../data/costs';
 import { computeComparisons, formatMultiple, formatUSD, generateOneLineSummary } from '../../lib/math';
+import { selectSmartContextItems, SmartFilterOptions } from '../../lib/utils/valueContext';
+import { XMultipleBar } from './XMultipleBar';
 import { jp } from '../i18n/jpKatakana';
 import CostsEditorModal from './CostsEditorModal';
 
@@ -16,11 +18,16 @@ type FilterType = 'oneOff' | 'monthly' | 'annual';
 
 export default function ValueContext({ className = '' }: ValueContextProps) {
   const [amount, setAmount] = useState<number>(0);
+  const [displayValue, setDisplayValue] = useState<string>('');
+  
+  // Initialize display value when amount changes
+  useEffect(() => {
+    setDisplayValue(amount === 0 ? '' : amount.toLocaleString('en-US'));
+  }, [amount]);
   const [costs, setCosts] = useState<CostItem[]>(DEFAULT_COSTS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortMode, setSortMode] = useState<SortMode>('amount');
   const [filters, setFilters] = useState<FilterType[]>([]);
-  const [pinnedItems, setPinnedItems] = useState<string[]>([]);
   const [isSticky, setIsSticky] = useState(false);
   const [debouncedAmount, setDebouncedAmount] = useState<number>(0);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -39,7 +46,6 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         if (parsed.selectedCategory) setSelectedCategory(parsed.selectedCategory);
         if (parsed.sortMode) setSortMode(parsed.sortMode);
         if (parsed.filters) setFilters(parsed.filters);
-        if (parsed.pinnedItems) setPinnedItems(parsed.pinnedItems);
       }
     } catch (error) {
       console.warn('Failed to load value context state:', error);
@@ -69,30 +75,56 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
       amount,
       selectedCategory,
       sortMode,
-      filters,
-      pinnedItems
+      filters
     };
     localStorage.setItem('fs.value.v2', JSON.stringify(state));
-  }, [amount, selectedCategory, sortMode, filters, pinnedItems]);
+  }, [amount, selectedCategory, sortMode, filters]);
 
   // Filter costs by category
   const filteredCosts = useMemo(() => 
     costs.filter(cost => 
-      selectedCategory === 'all' || cost.category === selectedCategory
+    selectedCategory === 'all' || cost.category === selectedCategory
     ), [costs, selectedCategory]
   );
 
-  // Compute comparisons with memoization (using debounced amount)
+  // Smart selection of context items
+  const smartItems = useMemo(() => {
+    if (debouncedAmount === 0) return [];
+    
+    // Create predicate for existing filters
+    const predicate: SmartFilterOptions['predicate'] = (item) => {
+      // Apply existing filter logic
+      if (filters.length > 0) {
+        if (filters.includes('oneOff') && ['tech', 'travel'].includes(item.category || '')) return true;
+        if (filters.includes('monthly') && ['housing', 'food', 'utilities'].includes(item.category || '')) return true;
+        if (filters.includes('annual') && ['leisure', 'housing'].includes(item.category || '')) return true;
+        return false;
+      }
+      return true;
+    };
+    
+    return selectSmartContextItems(filteredCosts, debouncedAmount, { predicate });
+  }, [debouncedAmount, filteredCosts, filters]);
+
+  // Convert smart items to comparisons format
   const comparisons = useMemo(() => 
-    computeComparisons(debouncedAmount, filteredCosts, sortMode, filters, pinnedItems),
-    [debouncedAmount, filteredCosts, sortMode, filters, pinnedItems]
+    smartItems.map(item => ({
+      item,
+      multiple: debouncedAmount / item.usd,
+      isNiceInteger: Math.abs(debouncedAmount / item.usd - Math.round(debouncedAmount / item.usd)) < 0.15
+    })),
+    [smartItems, debouncedAmount]
   );
 
-  // Generate one-line summary
-  const summary = useMemo(() => 
-    generateOneLineSummary(debouncedAmount, comparisons),
-    [debouncedAmount, comparisons]
-  );
+  // Compute domain for X-Multiple Ruler (shared across all 5 items)
+  const multiples = useMemo(() => {
+    const safeX = debouncedAmount > 0 ? debouncedAmount : 1;
+    return smartItems.map(it => it.usd / safeX).filter(Number.isFinite);
+  }, [smartItems, debouncedAmount]);
+
+  const domainMin = useMemo(() => Math.min(0.01, ...multiples, 0.01), [multiples]);
+  const domainMax = useMemo(() => Math.max(10, ...multiples, 10), [multiples]);
+
 
   // Get unique categories
   const categories = useMemo(() => 
@@ -106,13 +138,28 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     [comparisons]
   );
 
-  const handleAmountChange = useCallback((value: number) => {
-    setAmount(value);
+  // Helper functions for number formatting
+  const formatNumber = useCallback((num: number): string => {
+    if (num === 0) return '';
+    return num.toLocaleString('en-US');
   }, []);
 
-  const handleQuickAmount = useCallback((delta: number) => {
-    setAmount(prev => prev + delta);
+  const parseNumber = useCallback((str: string): number => {
+    // Remove commas and parse as number
+    const cleaned = str.replace(/,/g, '');
+    return parseFloat(cleaned) || 0;
   }, []);
+
+  const handleAmountChange = useCallback((value: number) => {
+    setAmount(value);
+    setDisplayValue(formatNumber(value));
+  }, [formatNumber]);
+
+  const handleQuickAmount = useCallback((delta: number) => {
+    const newAmount = amount + delta;
+    setAmount(newAmount);
+    setDisplayValue(formatNumber(newAmount));
+  }, [amount, formatNumber]);
 
   const toggleFilter = useCallback((filter: FilterType) => {
     setFilters(prev => 
@@ -122,24 +169,406 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     );
   }, []);
 
-  const togglePin = useCallback((itemId: string) => {
-    setPinnedItems(prev => 
-      prev.includes(itemId)
-        ? prev.filter(id => id !== itemId)
-        : [...prev, itemId]
-    );
-  }, []);
 
-  const copySummary = useCallback(async () => {
-    if (summary) {
-      try {
-        await navigator.clipboard.writeText(summary);
-        // Could add a toast notification here
-      } catch (error) {
-        console.warn('Failed to copy summary:', error);
-      }
+  const showPreviewDialog = useCallback((canvas: HTMLCanvasElement) => {
+    // Create preview dialog
+    const previewDialog = document.createElement('div');
+    previewDialog.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+    previewDialog.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      backdrop-filter: blur(4px);
+    `;
+
+    const previewContent = document.createElement('div');
+    previewContent.style.cssText = `
+      background: rgba(7, 12, 22, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    `;
+
+    const previewImg = document.createElement('img');
+    previewImg.src = canvas.toDataURL('image/png');
+    previewImg.style.cssText = `
+      max-width: 80%;
+      max-height: 70vh;
+      height: auto;
+      border-radius: 8px;
+    `;
+
+
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = `
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      justify-content: center;
+    `;
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.textContent = '📥 Download PNG';
+    downloadBtn.style.cssText = `
+      background: #2D4B7C;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 24px;
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 14px;
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: transparent;
+      color: #B8C4D7;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 4px;
+    `;
+
+    const closeDialog = () => {
+      document.body.removeChild(previewDialog);
+    };
+
+    downloadBtn.onclick = () => {
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pnl-context-${Math.abs(debouncedAmount)}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      closeDialog();
+    };
+
+    closeBtn.onclick = closeDialog;
+    previewDialog.onclick = (e) => {
+      if (e.target === previewDialog) closeDialog();
+    };
+
+
+    buttonContainer.appendChild(downloadBtn);
+    previewContent.appendChild(closeBtn);
+    previewContent.appendChild(previewImg);
+    previewContent.appendChild(buttonContainer);
+    previewDialog.appendChild(previewContent);
+    document.body.appendChild(previewDialog);
+  }, [debouncedAmount]);
+
+  const downloadPnLCard = useCallback(async () => {
+    if (!comparisons.length || debouncedAmount === 0) return;
+
+    try {
+      // Create canvas
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Set canvas size (card dimensions)
+      canvas.width = 800;
+      canvas.height = 600;
+
+      // Load background image
+      const backgroundImg = new Image();
+      backgroundImg.crossOrigin = 'anonymous';
+      
+      backgroundImg.onload = () => {
+        // Draw background with same styling as the app
+        ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
+        
+        // Add dark overlay (matching the app's gradient)
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, 'rgba(11, 18, 32, 0.15)');
+        gradient.addColorStop(0.4, 'rgba(11, 18, 32, 0.25)');
+        gradient.addColorStop(0.7, 'rgba(11, 18, 32, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Add glass card background
+        ctx.fillStyle = 'rgba(7, 12, 22, 0.42)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.lineWidth = 1;
+        const cardPadding = 40;
+        const cardWidth = canvas.width - (cardPadding * 2);
+        const cardHeight = canvas.height - (cardPadding * 2);
+        
+        // Rounded rectangle for glass card
+        ctx.beginPath();
+        ctx.roundRect(cardPadding, cardPadding, cardWidth, cardHeight, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        // Add blur effect (simulated with semi-transparent overlay)
+        ctx.fillStyle = 'rgba(7, 12, 22, 0.2)';
+        ctx.fill();
+
+        // Set text styles
+        ctx.fillStyle = '#E6EDF5'; // --ink
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        // Title with katakana sublabel
+        ctx.fillStyle = '#E6EDF5'; // --ink
+        ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+        ctx.fillText('PnL Value Context', cardPadding + 30, cardPadding + 30);
+        
+        // Katakana sublabel for title
+        ctx.fillStyle = '#7C93B2'; // --kori
+        ctx.font = '14px system-ui, -apple-system, sans-serif';
+        ctx.fillText('バリュー・コンテキスト', cardPadding + 30, cardPadding + 58);
+
+        // Amount
+        ctx.font = 'bold 48px system-ui, -apple-system, sans-serif';
+        const amountColor = debouncedAmount >= 0 ? '#D0A24A' : '#B44A4A'; // amber or akane
+        ctx.fillStyle = amountColor;
+        const amountText = `${debouncedAmount >= 0 ? '+' : '-'}$${Math.abs(debouncedAmount).toLocaleString()}`;
+        ctx.fillText(amountText, cardPadding + 30, cardPadding + 90);
+
+        // Subtitle with katakana sublabel
+        ctx.fillStyle = '#B8C4D7'; // --ink-muted
+        ctx.font = '20px system-ui, -apple-system, sans-serif';
+        const subtitle = debouncedAmount >= 0 ? 'This covers:' : 'This could have covered:';
+        ctx.fillText(subtitle, cardPadding + 30, cardPadding + 150);
+        
+        // Katakana sublabel for subtitle
+        ctx.fillStyle = '#7C93B2'; // --kori
+        ctx.font = '12px system-ui, -apple-system, sans-serif';
+        const subtitleJp = debouncedAmount >= 0 ? 'カバー相当' : '不足相当';
+        ctx.fillText(subtitleJp, cardPadding + 30, cardPadding + 172);
+
+        // Items list
+        ctx.fillStyle = '#E6EDF5';
+        ctx.font = '18px system-ui, -apple-system, sans-serif';
+        let yOffset = cardPadding + 200;
+        
+        comparisons.slice(0, 5).forEach((comparison, index) => {
+          if (yOffset > canvas.height - 60) return; // Prevent overflow
+          
+          const multiple = Math.abs(comparison.multiple);
+          const multipleText = `${multiple >= 1000 ? Math.round(multiple).toLocaleString() : multiple.toFixed(multiple >= 10 ? 1 : 2)}×`;
+          
+          // Item name
+          ctx.fillStyle = '#E6EDF5';
+          ctx.fillText(comparison.item.label, cardPadding + 30, yOffset);
+          
+          // Multiple
+          ctx.fillStyle = amountColor;
+          ctx.textAlign = 'right';
+          ctx.fillText(multipleText, canvas.width - cardPadding - 30, yOffset);
+          ctx.textAlign = 'left';
+          
+          yOffset += 35;
+        });
+
+        // Load and draw FujiScan logo
+        const logoImg = new Image();
+        logoImg.crossOrigin = 'anonymous';
+        
+        logoImg.onload = () => {
+          // Logo dimensions (maintaining 16:9 aspect ratio)
+          const logoWidth = 160;
+          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 90px
+          const logoX = (canvas.width - logoWidth) / 2; // Center horizontally
+          const logoY = yOffset + 20; // Just below the items list
+          
+          // Save state for rounded corners
+          ctx.save();
+          
+          // Create rounded rectangle clipping path for logo (matching main page)
+          const logoRadius = 8;
+          ctx.beginPath();
+          ctx.roundRect(logoX, logoY, logoWidth, logoHeight, logoRadius);
+          ctx.clip();
+          
+          // Draw logo
+          ctx.drawImage(logoImg, logoX, logoY, logoWidth, logoHeight);
+          
+          // Restore state
+          ctx.restore();
+          
+          // Footer text
+          ctx.fillStyle = '#7C93B2'; // --kori
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Generated by FujiScan', canvas.width / 2, canvas.height - 30);
+
+        // Show preview dialog
+        showPreviewDialog(canvas);
+        };
+        
+        logoImg.onerror = () => {
+          console.warn('Failed to load FujiScan logo, proceeding without it');
+          // Footer text without logo
+          ctx.fillStyle = '#7C93B2'; // --kori
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Generated by FujiScan', canvas.width / 2, canvas.height - 30);
+
+        // Show preview dialog
+        showPreviewDialog(canvas);
+        };
+        
+        logoImg.src = '/FujiScan-logo-wide.png';
+      };
+
+      backgroundImg.onerror = () => {
+        // Fallback: create image without background
+        // Add glass card background only
+        ctx.fillStyle = 'rgba(7, 12, 22, 0.42)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.lineWidth = 1;
+        const cardPadding = 40;
+        const cardWidth = canvas.width - (cardPadding * 2);
+        const cardHeight = canvas.height - (cardPadding * 2);
+        
+        ctx.beginPath();
+        ctx.roundRect(cardPadding, cardPadding, cardWidth, cardHeight, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        // Add blur effect (simulated with semi-transparent overlay)
+        ctx.fillStyle = 'rgba(7, 12, 22, 0.2)';
+        ctx.fill();
+
+        // Set text styles
+        ctx.fillStyle = '#E6EDF5'; // --ink
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        // Title with katakana sublabel
+        ctx.fillStyle = '#E6EDF5'; // --ink
+        ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+        ctx.fillText('PnL Value Context', cardPadding + 30, cardPadding + 30);
+        
+        // Katakana sublabel for title
+        ctx.fillStyle = '#7C93B2'; // --kori
+        ctx.font = '14px system-ui, -apple-system, sans-serif';
+        ctx.fillText('バリュー・コンテキスト', cardPadding + 30, cardPadding + 58);
+
+        // Amount
+        ctx.font = 'bold 48px system-ui, -apple-system, sans-serif';
+        const amountColor = debouncedAmount >= 0 ? '#D0A24A' : '#B44A4A'; // amber or akane
+        ctx.fillStyle = amountColor;
+        const amountText = `${debouncedAmount >= 0 ? '+' : '-'}$${Math.abs(debouncedAmount).toLocaleString()}`;
+        ctx.fillText(amountText, cardPadding + 30, cardPadding + 90);
+
+        // Subtitle with katakana sublabel
+        ctx.fillStyle = '#B8C4D7'; // --ink-muted
+        ctx.font = '20px system-ui, -apple-system, sans-serif';
+        const subtitle = debouncedAmount >= 0 ? 'This covers:' : 'This could have covered:';
+        ctx.fillText(subtitle, cardPadding + 30, cardPadding + 150);
+        
+        // Katakana sublabel for subtitle
+        ctx.fillStyle = '#7C93B2'; // --kori
+        ctx.font = '12px system-ui, -apple-system, sans-serif';
+        const subtitleJp = debouncedAmount >= 0 ? 'カバー相当' : '不足相当';
+        ctx.fillText(subtitleJp, cardPadding + 30, cardPadding + 172);
+
+        // Items list
+        ctx.fillStyle = '#E6EDF5';
+        ctx.font = '18px system-ui, -apple-system, sans-serif';
+        let yOffset = cardPadding + 200;
+        
+        comparisons.slice(0, 5).forEach((comparison, index) => {
+          if (yOffset > canvas.height - 60) return; // Prevent overflow
+          
+          const multiple = Math.abs(comparison.multiple);
+          const multipleText = `${multiple >= 1000 ? Math.round(multiple).toLocaleString() : multiple.toFixed(multiple >= 10 ? 1 : 2)}×`;
+          
+          // Item name
+          ctx.fillStyle = '#E6EDF5';
+          ctx.fillText(comparison.item.label, cardPadding + 30, yOffset);
+          
+          // Multiple
+          ctx.fillStyle = amountColor;
+          ctx.textAlign = 'right';
+          ctx.fillText(multipleText, canvas.width - cardPadding - 30, yOffset);
+          ctx.textAlign = 'left';
+          
+          yOffset += 35;
+        });
+
+        // Load and draw FujiScan logo (fallback version)
+        const logoImg = new Image();
+        logoImg.crossOrigin = 'anonymous';
+        
+        logoImg.onload = () => {
+          // Logo dimensions (maintaining 16:9 aspect ratio)
+          const logoWidth = 160;
+          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 90px
+          const logoX = (canvas.width - logoWidth) / 2; // Center horizontally
+          const logoY = yOffset + 20; // Just below the items list
+          
+          // Save state for rounded corners
+          ctx.save();
+          
+          // Create rounded rectangle clipping path for logo (matching main page)
+          const logoRadius = 8;
+          ctx.beginPath();
+          ctx.roundRect(logoX, logoY, logoWidth, logoHeight, logoRadius);
+          ctx.clip();
+          
+          // Draw logo
+          ctx.drawImage(logoImg, logoX, logoY, logoWidth, logoHeight);
+          
+          // Restore state
+          ctx.restore();
+          
+          // Footer text
+          ctx.fillStyle = '#7C93B2'; // --kori
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Generated by FujiScan', canvas.width / 2, canvas.height - 30);
+
+        // Show preview dialog
+        showPreviewDialog(canvas);
+        };
+        
+        logoImg.onerror = () => {
+          console.warn('Failed to load FujiScan logo, proceeding without it');
+          // Footer text without logo
+          ctx.fillStyle = '#7C93B2'; // --kori
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Generated by FujiScan', canvas.width / 2, canvas.height - 30);
+
+        // Show preview dialog
+        showPreviewDialog(canvas);
+        };
+        
+        logoImg.src = '/FujiScan-logo-wide.png';
+      };
+
+      // Load the background image
+      backgroundImg.src = '/FujiScan-bg-2.png';
+
+    } catch (error) {
+      console.error('Failed to generate PnL card:', error);
     }
-  }, [summary]);
+  }, [comparisons, debouncedAmount]);
 
   const handleSaveCosts = useCallback((newCosts: CostItem[]) => {
     setCosts(newCosts);
@@ -184,94 +613,65 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
   return (
     <>
       <div className={`space-y-6 ${className}`} data-value-context>
-        <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-ink tabular-nums">
               {jp.valueContext} <span className="text-xs text-kori">({jp.valueContextSub})</span>
-            </h2>
+        </h2>
             <div className="text-sm text-muted">
               {jp.estimates} <span className="text-xs text-kori">({jp.estimatesSub})</span>
             </div>
           </div>
           
-          {/* One-line summary */}
-          {summary && (
-            <div className="flex items-center space-x-2">
-              <div 
-                className="summary-line tabular-nums flex-1"
-                aria-live="polite"
-                role="status"
-              >
-                {summary}
-              </div>
-              <button
-                onClick={copySummary}
-                className="btn--quiet text-xs px-2 py-1 focus-ring"
-                aria-label="Copy summary"
-              >
-                📋
-              </button>
-            </div>
-          )}
-        </div>
+          {/* Download button */}
+          <div className="flex justify-center">
+            <button
+              onClick={downloadPnLCard}
+              className="btn--quiet text-xs px-4 py-2 focus-ring"
+              aria-label="Download PnL card image"
+            >
+              Download PnL Card
+            </button>
+          </div>
+      </div>
 
         {/* Two-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left column: Controls */}
           <div className="space-y-4">
-            {/* Amount Input */}
-            <div>
+      {/* Amount Input */}
+      <div>
               <label className="block text-sm font-medium text-ink mb-2 tabular-nums">
                 {jp.usdAmount} <span className="text-xs text-kori">({jp.usdAmountSub})</span>
-              </label>
-              <div className="flex items-center space-x-4">
-                <input
-                  type="number"
-                  value={amount || ''}
-                  onChange={(e) => handleAmountChange(Number(e.target.value))}
+        </label>
+        <div className="flex items-center space-x-4">
+          <input
+            type="text"
+            value={displayValue}
+            onChange={(e) => {
+              const parsed = parseNumber(e.target.value);
+              setAmount(parsed);
+              setDisplayValue(e.target.value);
+            }}
+            onBlur={() => setDisplayValue(formatNumber(amount))}
                   className="flex-1 px-4 py-2 border border-border rounded-lg bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums focus-ring"
-                  placeholder="Enter amount..."
-                />
-                <div className="flex flex-wrap gap-1">
-                  {[-1000, -100, -10, 10, 100, 1000].map(delta => (
-                    <button
-                      key={delta}
-                      onClick={() => handleQuickAmount(delta)}
-                      className="chip text-xs px-2 py-1 focus-ring"
-                    >
-                      {delta >= 0 ? '+' : ''}{delta >= 1000 ? '1k' : delta}
-                    </button>
-                  ))}
-                </div>
+            placeholder="Enter amount..."
+          />
+                  <div className="flex flex-wrap gap-1">
+                    {[-20000, -5000, -1000, 1000, 5000, 20000].map(delta => (
+                      <button
+                        key={delta}
+                        onClick={() => handleQuickAmount(delta)}
+                        className="chip text-xs px-2 py-1 focus-ring"
+                      >
+                        {delta >= 0 ? '+' : '-'}{Math.abs(delta) >= 1000 ? `${Math.abs(delta) / 1000}k` : Math.abs(delta)}
+                      </button>
+                    ))}
+                  </div>
               </div>
             </div>
 
             {/* Sort Modes */}
-            <div>
-              <label className="block text-sm font-medium text-ink mb-2">
-                {jp.sort} <span className="text-xs text-kori">(ソート順)</span>
-              </label>
-              <div className="sort-mode">
-                <button
-                  onClick={() => setSortMode('amount')}
-                  className={sortMode === 'amount' ? 'button--active' : ''}
-                >
-                  {jp.sortByAmount} <span className="text-xs">({jp.sortByAmountSub})</span>
-                </button>
-                <button
-                  onClick={() => setSortMode('priority')}
-                  className={sortMode === 'priority' ? 'button--active' : ''}
-                >
-                  {jp.sortByPriority} <span className="text-xs">({jp.sortByPrioritySub})</span>
-                </button>
-                <button
-                  onClick={() => setSortMode('edited')}
-                  className={sortMode === 'edited' ? 'button--active' : ''}
-                >
-                  {jp.sortByEdited} <span className="text-xs">({jp.sortByEditedSub})</span>
-                </button>
-              </div>
-            </div>
 
             {/* Filters */}
             <div>
@@ -296,30 +696,30 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
                     {filter.label} <span className="text-xs">({filter.sublabel})</span>
                   </button>
                 ))}
-              </div>
-            </div>
+        </div>
+      </div>
 
-            {/* Category Filter */}
-            <div>
-              <label className="block text-sm font-medium text-ink mb-2">
+      {/* Category Filter */}
+      <div>
+        <label className="block text-sm font-medium text-ink mb-2">
                 {jp.category} <span className="text-xs text-kori">({jp.categorySub})</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {categories.map(category => (
-                  <button
-                    key={category}
-                    onClick={() => setSelectedCategory(category || 'all')}
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {categories.map(category => (
+            <button
+              key={category}
+              onClick={() => setSelectedCategory(category || 'all')}
                     className={`chip ${
                       selectedCategory === (category || 'all') ? 'chip--on' : ''
                     } focus-ring`}
                     role="button"
                     aria-pressed={selectedCategory === (category || 'all')}
-                  >
-                    {category === 'all' ? 'All' : (category || 'all').charAt(0).toUpperCase() + (category || 'all').slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
+            >
+              {category === 'all' ? 'All' : (category || 'all').charAt(0).toUpperCase() + (category || 'all').slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
 
             {/* Edit Costs Button */}
             <div>
@@ -333,52 +733,27 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
           </div>
 
           {/* Right column: Results */}
-          <div className="space-y-3">
+        <div className="space-y-3">
             {debouncedAmount !== 0 ? (
                 <>
                   <h3 className="text-sm font-medium text-ink tabular-nums">
                     {isGain ? jp.covers : jp.costsYou} <span className="text-xs text-kori">({isGain ? jp.coversSub : jp.costsYouSub})</span>
-                  </h3>
-                {comparisons.length > 0 ? (
+          </h3>
+          {comparisons.length > 0 ? (
                   <div className="space-y-3">
-                    {/* Pinned items first */}
-                    {pinnedItems.length > 0 && (
-                        <>
-                          <div className="text-xs font-medium text-kori uppercase tracking-wide">
-                            {jp.fixed} ({jp.fixedSub})
-                          </div>
-                        {comparisons
-                          .filter(comp => pinnedItems.includes(comp.item.id))
-                          .map((comparison) => (
-                            <ResultRow
-                              key={comparison.item.id}
-                              comparison={comparison}
-                              isGain={isGain}
-                              isNeutral={isNeutral}
-                              maxMultiple={maxMultiple}
-                              onTogglePin={togglePin}
-                              isPinned={pinnedItems.includes(comparison.item.id)}
-                            />
-                          ))}
-                        <div className="hr-pixel" />
-                      </>
-                    )}
-                    
-                    {/* Regular items */}
-                    {comparisons
-                      .filter(comp => !pinnedItems.includes(comp.item.id))
-                      .slice(0, 5 - pinnedItems.length)
-                      .map((comparison) => (
-                        <ResultRow
-                          key={comparison.item.id}
-                          comparison={comparison}
-                          isGain={isGain}
-                          isNeutral={isNeutral}
-                          maxMultiple={maxMultiple}
-                          onTogglePin={togglePin}
-                          isPinned={pinnedItems.includes(comparison.item.id)}
-                        />
-                      ))}
+                    {/* Smart selected items */}
+                    {comparisons.map((comparison) => (
+                      <ResultRow
+                  key={comparison.item.id}
+                        comparison={comparison}
+                        isGain={isGain}
+                        isNeutral={isNeutral}
+                        maxMultiple={maxMultiple}
+                        xUSD={debouncedAmount}
+                        domainMin={domainMin}
+                        domainMax={domainMax}
+                      />
+                    ))}
                   </div>
                   ) : (
                     <div className="empty-state empty-state--small">
@@ -400,26 +775,17 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         <div className="sticky-calculator">
           <div className="flex items-center space-x-4">
             <input
-              type="number"
-              value={amount || ''}
-              onChange={(e) => handleAmountChange(Number(e.target.value))}
+              type="text"
+              value={displayValue}
+              onChange={(e) => {
+                const parsed = parseNumber(e.target.value);
+                setAmount(parsed);
+                setDisplayValue(e.target.value);
+              }}
+              onBlur={() => setDisplayValue(formatNumber(amount))}
               className="flex-1 px-3 py-2 border border-border rounded-lg bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums text-sm focus-ring"
               placeholder="Amount..."
             />
-            {summary && (
-              <>
-                <div className="text-sm text-ink tabular-nums truncate max-w-xs">
-                  {summary}
-                </div>
-                <button
-                  onClick={copySummary}
-                  className="btn--quiet text-xs px-2 py-1 focus-ring"
-                  aria-label="Copy summary"
-                >
-                  📋
-                </button>
-              </>
-            )}
           </div>
         </div>
       )}
@@ -440,21 +806,20 @@ interface ResultRowProps {
   isGain: boolean;
   isNeutral: boolean;
   maxMultiple: number;
-  onTogglePin: (itemId: string) => void;
-  isPinned: boolean;
+  xUSD: number;
+  domainMin: number;
+  domainMax: number;
 }
 
 function ResultRow({ 
   comparison, 
   isGain, 
   isNeutral, 
-  maxMultiple, 
-  onTogglePin, 
-  isPinned 
+  maxMultiple,
+  xUSD,
+  domainMin,
+  domainMax
 }: ResultRowProps) {
-  const barWidth = Math.min(100, (Math.abs(comparison.multiple) / maxMultiple) * 100);
-  const isOverflow = Math.abs(comparison.multiple) > maxMultiple;
-  
   return (
     <div
       className={`result ${
@@ -462,21 +827,14 @@ function ResultRow({
       }`}
     >
       <div>
-        <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
           <span className="font-medium text-ink tabular-nums">
-            {comparison.item.label}
-          </span>
-          {comparison.isNiceInteger && (
-            <span className="badge text-xs">~</span>
-          )}
-          <button
-            onClick={() => onTogglePin(comparison.item.id)}
-            className={`pin-button ${isPinned ? 'pin-button--pinned' : ''} focus-ring`}
-            aria-label={isPinned ? 'Unpin item' : 'Pin item'}
-          >
-            ★
-          </button>
-        </div>
+                        {comparison.item.label}
+                      </span>
+                      {comparison.isNiceInteger && (
+                        <span className="badge text-xs">~</span>
+                      )}
+                    </div>
         <div className="tooltip">
           <div className="text-xs text-muted tabular-nums cursor-help">
             {jp.unitPrice}: {formatUSD(comparison.item.usd)} / {jp.perUnit}
@@ -484,38 +842,28 @@ function ResultRow({
           <div className="tooltip-content">
             {jp.unitPrice} ({jp.unitPriceSub}): {formatUSD(comparison.item.usd)} / {jp.perUnit} ({jp.perUnitSub})
           </div>
-        </div>
-      </div>
-      <div className="text-right">
-        <div 
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div
           className={`multiple tabular-nums ${
             isNeutral ? 'text-kori' : isGain ? 'text-amber' : 'text-akane'
-          }`}
-        >
-          {formatMultiple(comparison.multiple)}
-        </div>
+                      }`}
+                    >
+                      {formatMultiple(comparison.multiple)}
+                    </div>
       </div>
       <div className="col-span-2">
-        <div className="bar-container">
-          <div className="bar">
-            <div 
-              style={{ 
-                width: `${barWidth}%`,
-                background: isNeutral ? 'var(--kori)' : isGain ? 'var(--amber)' : 'var(--akane)'
-              }}
-            />
-            {isOverflow && (
-              <div className="bar-overflow">
-                &gt;
-              </div>
-            )}
-          </div>
-          {/* Reference ticks */}
-          <div className="bar-tick bar-tick--1x" />
-          <div className="bar-tick bar-tick--2x" />
-          <div className="bar-tick bar-tick--5x" />
+        {/* XMultipleBar temporarily hidden - code preserved for future use */}
+        {/* <XMultipleBar
+          xUSD={xUSD}
+          itemUSD={comparison.item.usd}
+          domainMin={domainMin}
+          domainMax={domainMax}
+          className="w-full h-1 relative"
+          ariaLabel={`Position ${(comparison.item.usd / xUSD).toFixed(3)}× of input amount`}
+        /> */}
         </div>
-      </div>
     </div>
   );
 }

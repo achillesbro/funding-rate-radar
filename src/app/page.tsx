@@ -9,6 +9,7 @@ import FundingTable from './components/FundingTable';
 import FundingSignalsBar from './components/FundingSignalsBar';
 import ValueContext from './components/ValueContext';
 import ParallaxBackground from './components/ParallaxBackground';
+import SnowCanvas from './components/SnowCanvas';
 import { jp } from './i18n/jpKatakana';
 
 
@@ -148,6 +149,8 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       <ParallaxBackground />
+      {/* Snow effect above background, below content */}
+      <SnowCanvas zIndex={5} />
       {/* Header with Fuji silhouette */}
       <header className="header-fuji pt-8 pb-6">
         <div className="max-w-6xl mx-auto px-4">

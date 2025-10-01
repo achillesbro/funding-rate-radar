@@ -9,6 +9,46 @@ import { XMultipleBar } from './XMultipleBar';
 import { jp } from '../i18n/jpKatakana';
 import CostsEditorModal from './CostsEditorModal';
 
+// Tooltip Pill Component
+const TooltipPill = () => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <div className="relative inline-block">
+      <button
+        className="flex items-center gap-1 px-2 py-1 text-xs leading-tight bg-transparent border border-amber/30 text-aizome rounded-full hover:border-amber/50 hover:bg-amber/5 transition-all duration-200 shadow-sm"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{ maxWidth: '34ch' }}
+      >
+        <span>How it works</span>
+        <span className="text-kori">(ハウツー)</span>
+        <svg className="w-3 h-3 text-kori" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+        </svg>
+      </button>
+      
+      {isHovered && (
+        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 p-3 bg-surface border border-border rounded-lg shadow-lg z-50">
+          <div className="text-xs leading-tight text-ink">
+            <p className="mb-2">
+              Type a USD amount to contextualise your PnL (what it buys or could've covered).
+            </p>
+            <p className="mb-2">
+              Explore live funding rates across assets and exchanges with filters; data updates every 30s.
+            </p>
+            <p className="text-kori">
+              ハウツー：USD額を入力するとPnLが現実の支出に置き換わります。続いて銘柄／取引所別のライブ・ファンディング率をフィルターで確認（30秒ごとに更新）。
+            </p>
+          </div>
+          {/* Arrow */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-border"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ValueContextProps {
   className?: string;
 }
@@ -614,13 +654,16 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     <>
       <div className={`space-y-6 ${className}`} data-value-context>
       <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-ink tabular-nums">
-              {jp.valueContext} <span className="text-xs text-kori">({jp.valueContextSub})</span>
-        </h2>
-            <div className="text-sm text-muted">
-              {jp.estimates} <span className="text-xs text-kori">({jp.estimatesSub})</span>
+          <div className="flex items-center gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-ink tabular-nums">
+                PnL Value Context <span className="text-xs text-kori">({jp.valueContextSub})</span>
+              </h2>
+              <div className="text-sm text-muted">
+                {jp.estimates} <span className="text-xs text-kori">({jp.estimatesSub})</span>
+              </div>
             </div>
+            <TooltipPill />
           </div>
           
           {/* Download button */}

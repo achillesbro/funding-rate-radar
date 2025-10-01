@@ -5,7 +5,7 @@ A real-time cryptocurrency funding rate monitoring application with value contex
 ## Features
 
 ### 📊 Funding Rate Monitoring
-- **Real-time data** from 7 major exchanges (Binance, Bybit, OKX, Hyperliquid, Lighter, Extended, Aster)
+- **Real-time data** from 6 major exchanges (Binance, Bybit, Hyperliquid, Lighter, Extended, Aster)
 - **Interactive table** with sorting by APR, absolute APR, and negatives first
 - **Quick filters** for negative rates and upcoming funding periods
 - **Asset & exchange filtering** with persistent state
@@ -14,11 +14,11 @@ A real-time cryptocurrency funding rate monitoring application with value contex
 
 ### 💰 Value Context
 - **Cost comparisons** - see how much your PnL covers in real-world terms
-- **Interactive calculator** with live one-line summary
-- **Smart precision** - different decimal places based on magnitude
+- **Smart item selection** - automatically shows relevant comparisons
+- **Number formatting** - comma-separated thousands for better readability
 - **Color-coded results** - amber for gains, akane for losses, kori for neutral
-- **Pin functionality** - keep important items like rent/groceries at the top
-- **Sorting modes** - by amount, priority (essentials first), or edited items
+- **PnL card generation** - download beautiful shareable images
+- **Increment buttons** - quick adjustments from -20k to +20k
 - **Filter by frequency** - one-off, monthly, or annual expenses
 
 ### 🎨 Enhanced UX
@@ -30,12 +30,12 @@ A real-time cryptocurrency funding rate monitoring application with value contex
 - **Tooltips and microcopy** for better usability
 - **Responsive design** that works on all screen sizes
 
-### ⚙️ Cost Editor
-- **Inline editing** - click any field to edit in place
-- **Region presets** - EU, US, and JP cost templates
-- **Import/Export** - JSON data exchange
-- **Last edited timestamp** for tracking changes
-- **Persistent storage** - all settings saved locally
+### 🖼️ PnL Card Generation
+- **Preview dialog** - see your card before downloading
+- **Professional design** - glass morphism with FujiScan branding
+- **Bilingual labels** - English and Japanese katakana sublabels
+- **Proper aspect ratios** - maintains logo proportions
+- **High-quality PNG** - perfect for sharing on social media
 
 ## Tech Stack
 
@@ -49,7 +49,7 @@ A real-time cryptocurrency funding rate monitoring application with value contex
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/funding-rate-radar.git
+   git clone https://github.com/achillesbro/funding-rate-radar.git
    cd funding-rate-radar
    ```
 

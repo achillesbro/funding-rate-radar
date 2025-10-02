@@ -152,16 +152,16 @@ export default function Home() {
       {/* Snow effect above background, below content */}
       <SnowCanvas zIndex={5} />
       {/* Header with Fuji silhouette */}
-      <header className="header-fuji pt-8 pb-6">
-        <div className="max-w-6xl mx-auto px-4">
-           <div className="flex items-center justify-end">
+      <header className="header-fuji pt-6 md:pt-8 pb-4 md:pb-6">
+        <div className="max-w-6xl mx-auto px-3 md:px-4">
+           <div className="flex items-center justify-center md:justify-end">
              <div className="text-center">
                <img 
                  src="/FujiScan-logo-wide.png" 
                  alt="FujiScan Logo" 
-                 className="w-52 h-29 rounded-xl"
+                 className="w-40 md:w-52 h-auto rounded-xl"
                />
-               <div className="text-sm text-ink mt-2">
+               <div className="text-xs md:text-sm text-ink mt-2">
                  Made by <a href="https://x.com/0xachilles" target="_blank" rel="noopener noreferrer" className="text-aizome hover:text-amber transition-colors duration-200">@0xachilles</a>
                </div>
              </div>
@@ -169,9 +169,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 space-y-6 py-8 bg-transparent">
+      <main className="max-w-6xl mx-auto px-3 md:px-4 space-y-4 md:space-y-6 py-6 md:py-8 bg-transparent">
         {/* Value Context Section */}
-        <div className="glass p-6">
+        <div className="glass p-4 md:p-6">
           <ValueContext />
         </div>
 
@@ -179,14 +179,29 @@ export default function Home() {
         <div className="hr-pixel"></div>
 
         {/* Funding Radar Section */}
-        <div className="glass p-6">
+        <div className="glass p-4 md:p-6">
           <div className="mb-4">
             <h2 className="text-xl font-semibold text-ink">
               Funding Rates <span className="text-xs text-kori">({jp.fundingRadarSub})</span>
             </h2>
           </div>
           <FundingSignalsBar tickers={filteredAndSortedData} />
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
+          {/* Mobile: Filters appear right after signals bar */}
+          <div className="md:hidden">
+            <FundingControls
+              selectedAssets={selectedAssets}
+              selectedExchanges={selectedExchanges}
+              sortBy={sortBy}
+              onAssetToggle={handleAssetToggle}
+              onExchangeToggle={handleExchangeToggle}
+              onSortChange={setSortBy}
+              onQuickFiltersChange={setQuickFilters}
+            />
+          </div>
+          
+          {/* Desktop: Side-by-side layout */}
+          <div className="hidden md:grid md:grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
               <FundingControls
                 selectedAssets={selectedAssets}
@@ -201,6 +216,11 @@ export default function Home() {
             <div className="lg:col-span-3">
               <FundingTable data={filteredAndSortedData} isLoading={isLoading} />
             </div>
+          </div>
+          
+          {/* Mobile: Table appears after filters */}
+          <div className="md:hidden">
+            <FundingTable data={filteredAndSortedData} isLoading={isLoading} />
           </div>
         </div>
       </main>

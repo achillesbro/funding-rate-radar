@@ -687,7 +687,8 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
               <label className="block text-sm font-medium text-ink mb-2 tabular-nums">
                 {jp.usdAmount} <span className="text-xs text-kori">({jp.usdAmountSub})</span>
         </label>
-        <div className="flex items-center space-x-4">
+        <div className="space-y-3">
+          {/* Input field - full width on all screen sizes */}
           <input
             type="text"
             value={displayValue}
@@ -697,21 +698,23 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
               setDisplayValue(e.target.value);
             }}
             onBlur={() => setDisplayValue(formatNumber(amount))}
-                  className="flex-1 px-4 py-2 border border-border rounded-lg bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums focus-ring"
+            className="w-full px-4 py-2 border border-border rounded-lg bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums focus-ring"
             placeholder="Enter amount..."
           />
-                  <div className="flex flex-wrap gap-1">
-                    {[-20000, -5000, -1000, 1000, 5000, 20000].map(delta => (
-                      <button
-                        key={delta}
-                        onClick={() => handleQuickAmount(delta)}
-                        className="chip text-xs px-2 py-1 focus-ring"
-                      >
-                        {delta >= 0 ? '+' : '-'}{Math.abs(delta) >= 1000 ? `${Math.abs(delta) / 1000}k` : Math.abs(delta)}
-                      </button>
-                    ))}
-                  </div>
-              </div>
+          
+          {/* Increment buttons - below input on all screen sizes */}
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+            {[-20000, -5000, -1000, 1000, 5000, 20000].map(delta => (
+              <button
+                key={delta}
+                onClick={() => handleQuickAmount(delta)}
+                className="chip chip--mobile text-sm px-3 py-2 focus-ring text-center"
+              >
+                {delta >= 0 ? '+' : '-'}{Math.abs(delta) >= 1000 ? `${Math.abs(delta) / 1000}k` : Math.abs(delta)}
+              </button>
+            ))}
+          </div>
+        </div>
             </div>
 
             {/* Sort Modes */}

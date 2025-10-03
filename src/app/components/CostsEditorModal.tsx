@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { CostItem } from '../../types';
+import { WagePreset, loadWagePresetsFromStorage, saveWagePresetsToStorage, recalculateWagePresetsWithFX } from '../data/wages';
 import { jp } from '../i18n/jpKatakana';
 
 interface CostsEditorModalProps {
@@ -144,17 +145,22 @@ const REGION_PRESETS = {
 
 export default function CostsEditorModal({ isOpen, costs, onClose, onSave }: CostsEditorModalProps) {
   const [editingCosts, setEditingCosts] = useState<CostItem[]>(costs);
+  const [editingWagePresets, setEditingWagePresets] = useState<Record<'US' | 'EU' | 'JP', WagePreset>>(loadWagePresetsFromStorage());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<'label' | 'usd' | null>(null);
   const [editingValue, setEditingValue] = useState<string>('');
   const [lastEdited, setLastEdited] = useState<Date | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<keyof typeof REGION_PRESETS | null>(null);
+  const [fxEurUsd, setFxEurUsd] = useState<number>(1.08);
+  const [fxJpyUsd, setFxJpyUsd] = useState<number>(150);
+  const [activeTab, setActiveTab] = useState<'costs' | 'wages'>('costs');
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Initialize editing costs when modal opens
   useEffect(() => {
     if (isOpen) {
       setEditingCosts(costs);
+      setEditingWagePresets(loadWagePresetsFromStorage());
       setLastEdited(new Date());
     }
   }, [isOpen, costs]);
@@ -226,9 +232,37 @@ export default function CostsEditorModal({ isOpen, costs, onClose, onSave }: Cos
     setLastEdited(new Date());
   };
 
+  const handleWagePresetChange = (region: 'US' | 'EU' | 'JP', field: keyof WagePreset, value: any) => {
+    setEditingWagePresets(prev => ({
+      ...prev,
+      [region]: {
+        ...prev[region],
+        [field]: value
+      }
+    }));
+    setLastEdited(new Date());
+  };
+
+  const handleFxRateChange = (currency: 'EUR' | 'JPY', rate: number) => {
+    if (currency === 'EUR') {
+      setFxEurUsd(rate);
+    } else {
+      setFxJpyUsd(rate);
+    }
+    
+    // Recalculate EU/JP wages with new FX rates
+    const updated = recalculateWagePresetsWithFX(editingWagePresets, 
+      currency === 'EUR' ? rate : fxEurUsd, 
+      currency === 'JPY' ? rate : fxJpyUsd
+    );
+    setEditingWagePresets(updated);
+    setLastEdited(new Date());
+  };
+
 
   const handleSave = () => {
     onSave(editingCosts);
+    saveWagePresetsToStorage(editingWagePresets);
     onClose();
   };
 
@@ -242,7 +276,7 @@ export default function CostsEditorModal({ isOpen, costs, onClose, onSave }: Cos
       <div className="glass p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h3 id="modal-title" className="text-lg font-semibold text-ink">{jp.editCosts}</h3>
+            <h3 id="modal-title" className="text-lg font-semibold text-ink">Edit Presets</h3>
             {lastEdited && (
               <p className="text-xs text-muted">
                 Last edited: {lastEdited.toLocaleString()}
@@ -258,89 +292,211 @@ export default function CostsEditorModal({ isOpen, costs, onClose, onSave }: Cos
           </button>
         </div>
 
-        {/* Region Presets */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium text-ink mb-3">Region Presets</h4>
-          <div className="flex flex-wrap gap-2">
-            {Object.keys(REGION_PRESETS).map(region => (
-              <button
-                key={region}
-                onClick={() => handlePresetApply(region as keyof typeof REGION_PRESETS)}
-                className={`chip ${
-                  selectedRegion === region ? 'chip--on' : ''
-                } focus-ring`}
-                role="button"
-                aria-pressed={selectedRegion === region}
-              >
-                {region}
-              </button>
-            ))}
-            <button
-              onClick={handleResetToDefaults}
-              className="chip focus-ring"
-            >
-              Reset to defaults
-            </button>
-          </div>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6 bg-surface-2 p-1 rounded-lg">
+          <button
+            onClick={() => setActiveTab('costs')}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'costs' 
+                ? 'bg-surface text-ink' 
+                : 'text-muted hover:text-ink'
+            }`}
+          >
+            Cost Items
+          </button>
+          <button
+            onClick={() => setActiveTab('wages')}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'wages' 
+                ? 'bg-surface text-ink' 
+                : 'text-muted hover:text-ink'
+            }`}
+          >
+            Wage Presets
+          </button>
         </div>
 
+        {/* Tab Content */}
+        {activeTab === 'costs' && (
+          <>
+            {/* Region Presets */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-ink mb-3">Region Presets</h4>
+              <div className="flex flex-wrap gap-2">
+                {Object.keys(REGION_PRESETS).map(region => (
+                  <button
+                    key={region}
+                    onClick={() => handlePresetApply(region as keyof typeof REGION_PRESETS)}
+                    className={`chip ${
+                      selectedRegion === region ? 'chip--on' : ''
+                    } focus-ring`}
+                    role="button"
+                    aria-pressed={selectedRegion === region}
+                  >
+                    {region}
+                  </button>
+                ))}
+                <button
+                  onClick={handleResetToDefaults}
+                  className="chip focus-ring"
+                >
+                  Reset to defaults
+                </button>
+              </div>
+            </div>
 
-        {/* Editable Table */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium text-ink mb-3">Cost Items</h4>
-          <div className="space-y-2">
-            {editingCosts.map(cost => (
-              <div key={cost.id} className="flex items-center space-x-4 p-2 rounded border border-border hover:bg-surface-2">
-                {/* Label */}
-                <div className="flex-1">
-                  {editingId === cost.id && editingField === 'label' ? (
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      onBlur={commitInlineEdit}
-                      className="w-full px-2 py-1 border border-aizome rounded bg-surface text-ink focus:outline-none"
-                    />
-                  ) : (
-                    <div
-                      onClick={() => startInlineEdit(cost.id, 'label', cost.label)}
-                      className="px-2 py-1 cursor-pointer hover:bg-surface rounded tabular-nums"
-                    >
-                      {cost.label}
+            {/* Editable Table */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-ink mb-3">Cost Items</h4>
+              <div className="space-y-2">
+                {editingCosts.map(cost => (
+                  <div key={cost.id} className="flex items-center space-x-4 p-2 rounded border border-border hover:bg-surface-2">
+                    {/* Label */}
+                    <div className="flex-1">
+                      {editingId === cost.id && editingField === 'label' ? (
+                        <input
+                          ref={inputRef}
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          onBlur={commitInlineEdit}
+                          className="w-full px-2 py-1 border border-aizome rounded bg-surface text-ink focus:outline-none"
+                        />
+                      ) : (
+                        <div
+                          onClick={() => startInlineEdit(cost.id, 'label', cost.label)}
+                          className="px-2 py-1 cursor-pointer hover:bg-surface rounded tabular-nums"
+                        >
+                          {cost.label}
+                        </div>
+                      )}
                     </div>
-                  )}
+                    
+                    {/* USD Amount */}
+                    <div className="flex items-center space-x-1">
+                      <span className="text-muted">$</span>
+                      {editingId === cost.id && editingField === 'usd' ? (
+                        <input
+                          ref={inputRef}
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          onBlur={commitInlineEdit}
+                          className="w-20 px-2 py-1 border border-aizome rounded bg-surface text-ink focus:outline-none tabular-nums"
+                          min="0"
+                          step="0.01"
+                        />
+                      ) : (
+                        <div
+                          onClick={() => startInlineEdit(cost.id, 'usd', cost.usd)}
+                          className="w-20 px-2 py-1 cursor-pointer hover:bg-surface rounded text-right tabular-nums"
+                        >
+                          {cost.usd}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'wages' && (
+          <div className="space-y-6">
+            {/* FX Rate Controls */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-ink mb-3">Exchange Rates</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-muted mb-1">EUR → USD</label>
+                  <input
+                    type="number"
+                    value={fxEurUsd}
+                    onChange={(e) => handleFxRateChange('EUR', Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-border rounded bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums"
+                    step="0.01"
+                    min="0.1"
+                    max="2.0"
+                  />
                 </div>
-                
-                {/* USD Amount */}
-                <div className="flex items-center space-x-1">
-                  <span className="text-muted">$</span>
-                  {editingId === cost.id && editingField === 'usd' ? (
-                    <input
-                      ref={inputRef}
-                      type="number"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      onBlur={commitInlineEdit}
-                      className="w-20 px-2 py-1 border border-aizome rounded bg-surface text-ink focus:outline-none tabular-nums"
-                      min="0"
-                      step="0.01"
-                    />
-                  ) : (
-                    <div
-                      onClick={() => startInlineEdit(cost.id, 'usd', cost.usd)}
-                      className="w-20 px-2 py-1 cursor-pointer hover:bg-surface rounded text-right tabular-nums"
-                    >
-                      {cost.usd}
-                    </div>
-                  )}
+                <div>
+                  <label className="block text-xs text-muted mb-1">JPY → USD</label>
+                  <input
+                    type="number"
+                    value={fxJpyUsd}
+                    onChange={(e) => handleFxRateChange('JPY', Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-border rounded bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums"
+                    step="1"
+                    min="50"
+                    max="300"
+                  />
                 </div>
               </div>
-            ))}
+            </div>
+
+            {/* Wage Presets */}
+            <div className="space-y-4">
+              {(['US', 'EU', 'JP'] as const).map(region => {
+                const preset = editingWagePresets[region];
+                return (
+                  <div key={region} className="border border-border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-ink">{region} Wage Preset</h4>
+                      <div className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
+                        {preset.meta.source}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs text-muted mb-1">Daily USD</label>
+                        <input
+                          type="number"
+                          value={preset.daily_usd}
+                          onChange={(e) => handleWagePresetChange(region, 'daily_usd', Number(e.target.value))}
+                          className="w-full px-3 py-2 border border-border rounded bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted mb-1">Monthly USD</label>
+                        <input
+                          type="number"
+                          value={preset.monthly_usd}
+                          onChange={(e) => handleWagePresetChange(region, 'monthly_usd', Number(e.target.value))}
+                          className="w-full px-3 py-2 border border-border rounded bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted mb-1">Annual USD</label>
+                        <input
+                          type="number"
+                          value={preset.annual_usd}
+                          onChange={(e) => handleWagePresetChange(region, 'annual_usd', Number(e.target.value))}
+                          className="w-full px-3 py-2 border border-border rounded bg-surface text-ink focus:outline-none focus:border-aizome tabular-nums"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+                    
+                    {preset.meta.notes && (
+                      <div className="mt-2 text-xs text-muted">
+                        {preset.meta.notes}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end space-x-2">

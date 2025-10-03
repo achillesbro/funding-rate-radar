@@ -10,6 +10,17 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['recharts'],
   },
+  // Improve development server stability
+  webpack: (config, { dev, isServer }) => {
+    if (dev && !isServer) {
+      // Reduce HMR issues in development
+      config.watchOptions = {
+        poll: 1000,
+        aggregateTimeout: 300,
+      };
+    }
+    return config;
+  },
   // Headers for API routes
   async headers() {
     return [

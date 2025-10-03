@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { CostItem, ValueComparison } from '../../types';
 import { DEFAULT_COSTS, loadCostsFromStorage, saveCostsToStorage } from '../data/costs';
+import { WAGE_PRESETS, loadWagePresetsFromStorage, wageEquivalents } from '../data/wages';
 import { computeComparisons, formatMultiple, formatUSD, generateOneLineSummary } from '../../lib/math';
 import { selectSmartContextItems, SmartFilterOptions } from '../../lib/utils/valueContext';
 import { XMultipleBar } from './XMultipleBar';
@@ -65,6 +66,7 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     setDisplayValue(amount === 0 ? '' : amount.toLocaleString('en-US'));
   }, [amount]);
   const [costs, setCosts] = useState<CostItem[]>(DEFAULT_COSTS);
+  const [wagePresets, setWagePresets] = useState(WAGE_PRESETS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortMode, setSortMode] = useState<SortMode>('amount');
   const [filters, setFilters] = useState<FilterType[]>([]);
@@ -76,6 +78,7 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
   // Load costs and state from localStorage on mount
   useEffect(() => {
     setCosts(loadCostsFromStorage());
+    setWagePresets(loadWagePresetsFromStorage());
     
     // Load persisted state
     try {
@@ -155,6 +158,37 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     })),
     [smartItems, debouncedAmount]
   );
+
+  // Calculate wage equivalents
+  const wageEquivalentsDisplay = useMemo(() => {
+    if (debouncedAmount === 0) return null;
+    
+    const regions: Array<'US'|'EU'|'JP'> = ['US','EU','JP'];
+    const wagesToShow = regions.map(r => ({ r, wage: wagePresets[r] }));
+    
+    const equivs = wagesToShow.map(({ r, wage }) => ({
+      region: r,
+      ...wageEquivalents(debouncedAmount, wage)
+    }));
+    
+    const fmt = (v: number) => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1));
+    
+    // Choose the best unit to display based on amount size
+    const getBestUnit = (equiv: typeof equivs[0]) => {
+      const absYears = Math.abs(equiv.years);
+      const absMonths = Math.abs(equiv.months);
+      
+      if (absYears >= 0.5) return `≈ ${fmt(equiv.years)} years`;
+      if (absMonths >= 0.5) return `≈ ${fmt(equiv.months)} months`;
+      return `≈ ${fmt(equiv.days)} days`;
+    };
+    
+    const line = equivs
+      .map(e => `${getBestUnit(e)} (${e.region})`)
+      .join(' • ');
+    
+    return { equivs, line };
+  }, [debouncedAmount, wagePresets]);
 
   // Compute domain for X-Multiple Ruler (shared across all 5 items)
   const multiples = useMemo(() => {
@@ -399,10 +433,44 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         const subtitleJp = debouncedAmount >= 0 ? 'カバー相当' : '不足相当';
         ctx.fillText(subtitleJp, cardPadding + 30, cardPadding + 172);
 
+        // Wage equivalent
+        if (wageEquivalentsDisplay) {
+          ctx.fillStyle = '#B8C4D7'; // --ink-muted
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Wage Equivalent:', cardPadding + 30, cardPadding + 200);
+          
+          ctx.fillStyle = '#E6EDF5'; // --ink
+          ctx.font = '12px system-ui, -apple-system, sans-serif';
+          
+          // Split the wage line if it's too long for the canvas
+          const maxWidth = canvas.width - cardPadding * 2 - 60;
+          const words = wageEquivalentsDisplay.line.split(' • ');
+          let currentLine = '';
+          let lineY = cardPadding + 220;
+          
+          words.forEach((word, index) => {
+            const testLine = currentLine + (currentLine ? ' • ' : '') + word;
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && currentLine) {
+              ctx.fillText(currentLine, cardPadding + 30, lineY);
+              currentLine = word;
+              lineY += 16;
+            } else {
+              currentLine = testLine;
+            }
+            
+            // Draw the last line
+            if (index === words.length - 1) {
+              ctx.fillText(currentLine, cardPadding + 30, lineY);
+            }
+          });
+        }
+
         // Items list
         ctx.fillStyle = '#E6EDF5';
         ctx.font = '18px system-ui, -apple-system, sans-serif';
-        let yOffset = cardPadding + 200;
+        let yOffset = cardPadding + (wageEquivalentsDisplay ? 260 : 200);
         
         comparisons.slice(0, 5).forEach((comparison, index) => {
           if (yOffset > canvas.height - 60) return; // Prevent overflow
@@ -428,11 +496,11 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         logoImg.crossOrigin = 'anonymous';
         
         logoImg.onload = () => {
-          // Logo dimensions (maintaining 16:9 aspect ratio)
-          const logoWidth = 160;
-          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 90px
-          const logoX = (canvas.width - logoWidth) / 2; // Center horizontally
-          const logoY = yOffset + 20; // Just below the items list
+          // Logo dimensions for the red rectangle area
+          const logoWidth = 200; // Much larger to fill the red rectangle area
+          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 112px
+          const logoX = canvas.width - logoWidth - cardPadding - 20; // Positioned in the red rectangle area
+          const logoY = cardPadding + 30; // Align with title area
           
           // Save state for rounded corners
           ctx.save();
@@ -527,10 +595,44 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         const subtitleJp = debouncedAmount >= 0 ? 'カバー相当' : '不足相当';
         ctx.fillText(subtitleJp, cardPadding + 30, cardPadding + 172);
 
+        // Wage equivalent
+        if (wageEquivalentsDisplay) {
+          ctx.fillStyle = '#B8C4D7'; // --ink-muted
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Wage Equivalent:', cardPadding + 30, cardPadding + 200);
+          
+          ctx.fillStyle = '#E6EDF5'; // --ink
+          ctx.font = '12px system-ui, -apple-system, sans-serif';
+          
+          // Split the wage line if it's too long for the canvas
+          const maxWidth = canvas.width - cardPadding * 2 - 60;
+          const words = wageEquivalentsDisplay.line.split(' • ');
+          let currentLine = '';
+          let lineY = cardPadding + 220;
+          
+          words.forEach((word, index) => {
+            const testLine = currentLine + (currentLine ? ' • ' : '') + word;
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && currentLine) {
+              ctx.fillText(currentLine, cardPadding + 30, lineY);
+              currentLine = word;
+              lineY += 16;
+            } else {
+              currentLine = testLine;
+            }
+            
+            // Draw the last line
+            if (index === words.length - 1) {
+              ctx.fillText(currentLine, cardPadding + 30, lineY);
+            }
+          });
+        }
+
         // Items list
         ctx.fillStyle = '#E6EDF5';
         ctx.font = '18px system-ui, -apple-system, sans-serif';
-        let yOffset = cardPadding + 200;
+        let yOffset = cardPadding + (wageEquivalentsDisplay ? 260 : 200);
         
         comparisons.slice(0, 5).forEach((comparison, index) => {
           if (yOffset > canvas.height - 60) return; // Prevent overflow
@@ -556,11 +658,11 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         logoImg.crossOrigin = 'anonymous';
         
         logoImg.onload = () => {
-          // Logo dimensions (maintaining 16:9 aspect ratio)
-          const logoWidth = 160;
-          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 90px
-          const logoX = (canvas.width - logoWidth) / 2; // Center horizontally
-          const logoY = yOffset + 20; // Just below the items list
+          // Logo dimensions for the red rectangle area
+          const logoWidth = 200; // Much larger to fill the red rectangle area
+          const logoHeight = Math.round(logoWidth * 9 / 16); // 16:9 aspect ratio = 112px
+          const logoX = canvas.width - logoWidth - cardPadding - 20; // Positioned in the red rectangle area
+          const logoY = cardPadding + 30; // Align with title area
           
           // Save state for rounded corners
           ctx.save();
@@ -608,11 +710,13 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
     } catch (error) {
       console.error('Failed to generate PnL card:', error);
     }
-  }, [comparisons, debouncedAmount]);
+  }, [comparisons, debouncedAmount, wageEquivalentsDisplay]);
 
   const handleSaveCosts = useCallback((newCosts: CostItem[]) => {
     setCosts(newCosts);
     saveCostsToStorage(newCosts);
+    // Reload wage presets in case they were updated in the modal
+    setWagePresets(loadWagePresetsFromStorage());
   }, []);
 
   const isGain = debouncedAmount >= 0;
@@ -782,6 +886,36 @@ export default function ValueContext({ className = '' }: ValueContextProps) {
         <div className="space-y-3">
             {debouncedAmount !== 0 ? (
                 <>
+                  {/* Wage Equivalents */}
+                  {wageEquivalentsDisplay && (
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-sm font-medium text-ink">
+                          Wage Equivalent <span className="text-xs text-kori">(給与相当)</span>
+                        </h3>
+                        <div className="relative group">
+                          <button className="text-xs text-kori hover:text-ink focus-ring">
+                            📊
+                          </button>
+                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 p-3 bg-surface border border-border rounded-lg shadow-lg z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="text-xs leading-tight text-ink">
+                              <div className="font-medium mb-2">Data Sources:</div>
+                              {(['US', 'EU', 'JP'] as const).map(region => (
+                                <div key={region} className="mb-1">
+                                  <span className="font-medium">{region}:</span> {wagePresets[region].meta.source}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-border"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-sm text-muted bg-surface-2 p-3 rounded-lg border border-border">
+                        {wageEquivalentsDisplay.line}
+                      </div>
+                    </div>
+                  )}
+                  
                   <h3 className="text-sm font-medium text-ink tabular-nums">
                     {isGain ? jp.covers : jp.costsYou} <span className="text-xs text-kori">({isGain ? jp.coversSub : jp.costsYouSub})</span>
           </h3>
